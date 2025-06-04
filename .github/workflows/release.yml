@@ -1,0 +1,93 @@
+name: Release Docker images
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Specify a tag"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build Docker images and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch binary releases
+        run: |
+          # Define the base URL for downloads using the passed release_tag
+          BASE_URL="https://gitlab.com/CoiaPrant/Topicgram/-/releases/${{ github.event.inputs.release_tag }}/downloads"
+
+          # Create the dist directory if it doesn't exist
+          mkdir -p dist
+
+          # Define the architectures to process
+          ARCHITECTURES=("arm64" "amd64")
+
+          TAG_NO_V="${{ github.event.inputs.release_tag }}"
+          TAG_NO_V="${TAG_NO_V#v}"
+
+          # Loop through each architecture
+          for arch in "${ARCHITECTURES[@]}"; do
+            # Construct the full download URL for the tar.gz archive
+            DOWNLOAD_URL="${BASE_URL}/Topicgram_${TAG_NO_V}_linux_${arch}.tar.gz"
+            
+            # Download the archive
+            curl -L -o "Topicgram_linux_${arch}.tar.gz" "$DOWNLOAD_URL"
+            
+            # Check if download was successful
+            if [ $? -ne 0 ]; then
+              echo "Error: Failed to download Topicgram_linux_${arch}.tar.gz"
+              exit 1
+            fi
+            
+            # Create a temporary directory for extraction
+            mkdir -p temp_extract_$arch
+            
+            # Extract the archive into the temporary directory
+            tar -xzf "Topicgram_linux_${arch}.tar.gz" -C temp_extract_$arch
+            
+            # Check if extraction was successful and the Topicgram binary exists
+            if [ ! -f "temp_extract_$arch/Topicgram" ]; then
+              echo "Error: Topicgram binary not found after extraction for $arch."
+              exit 1
+            fi
+            
+            # Rename the extracted binary and move it to the dist directory
+            mv "temp_extract_$arch/Topicgram" "dist/Topicgram_linux_${arch}"
+            
+            # Clean up the temporary directory and downloaded archive
+            rm -rf "temp_extract_$arch"
+            rm "Topicgram_linux_${arch}.tar.gz"
+          done
+
+      - name: Log into GHCR
+        uses: docker/login-action@master
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build docker image and push to ghcr
+        if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'refs/tags/')
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/socketcat/topicgram:latest
+            ghcr.io/socketcat/topicgram:${{ github.event.inputs.release_tag }}

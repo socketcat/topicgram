@@ -1,0 +1,46 @@
+name: Sync Latest Release
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync Latest Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_release_tag: ${{ steps.extract_and_compare_tags.outputs.new_release_tag }} # Define output for the new tag
+    steps:
+      - name: Extract and compare tags
+        id: extract_and_compare_tags # Add an ID to reference this step's outputs
+        run: |
+          CURRENT=$(curl -L https://api.github.com/repos/socketcat/topicgram-docker/releases/latest | jq -r '.tag_name')
+          LATEST=$(curl -L https://gitlab.com/api/v4/projects/CoiaPrant%2FTopicgram/releases/permalink/latest | jq -r '.tag_name')
+
+          echo "Current GitHub tag: $CURRENT"
+          echo "Latest GitLab tag: $LATEST"
+
+          if [[ "$CURRENT" != "$LATEST" && -n "$LATEST" ]]; then # Check if LATEST is different AND not empty
+            echo "New release detected: $LATEST"
+            echo "new_release_tag=$LATEST" >> "$GITHUB_OUTPUT" # Set output for the job
+          else
+            echo "No new release or LATEST tag is empty. Skipping release creation."
+          fi
+
+      - name: Create dummy GitHub release
+        if: steps.extract_and_compare_tags.outputs.new_release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.extract_and_compare_tags.outputs.new_release_tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger release
+        if: steps.extract_and_compare_tags.outputs.new_release_tag != ''
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          GH_DEBUG: api
+        run: |
+          gh workflow run release.yml -F release_tag=${{ steps.extract_and_compare_tags.outputs.new_release_tag }}
