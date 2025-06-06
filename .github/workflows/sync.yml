@@ -15,7 +15,7 @@ jobs:
       - name: Extract and compare tags
         id: extract_and_compare_tags # Add an ID to reference this step's outputs
         run: |
-          CURRENT=$(curl -L https://api.github.com/repos/socketcat/topicgram-docker/releases/latest | jq -r '.tag_name')
+          CURRENT=$(curl -L https://api.github.com/repos/socketcat/topicgram/releases/latest | jq -r '.tag_name')
           LATEST=$(curl -L https://gitlab.com/api/v4/projects/CoiaPrant%2FTopicgram/releases/permalink/latest | jq -r '.tag_name')
 
           echo "Current GitHub tag: $CURRENT"
